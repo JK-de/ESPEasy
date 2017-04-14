@@ -1,25 +1,25 @@
 //#######################################################################################################
-//#################################### Plugin 038: NeoPixel Basic #######################################
+//#################################### Plugin 142: RGB-Strip ############################################
 //#######################################################################################################
 
 // List of commands:
 // (1) RGB,<red 0-255>,<green 0-255>,<blue 0-255>
-// (2) HSV,<hue 0-360>,<saturation 0-100>,<value;brightness 0-100>
+// (2) HSV,<hue 0-360>,<saturation 0-100>,<value/brightness 0-100>
 
 // Usage:
-// (1): Set RGB Color to specified LED number (eg. NeoPixel,5,255,255,255)
-// (2): Set all LED to specified color (eg. NeoPixelAll,255,255,255)
-//		If you use 'NeoPixelAll' this will off all LED (like NeoPixelAll,0,0,0)
-// (3): Set color LED between <start led nr> and <stop led nr> to specified color (eg. NeoPixelLine,1,6,255,255,255)
+// (1): Set RGB Color to LED (eg. RGB,255,255,255)
 
-//#include <Adafruit_NeoPixel.h>
-//Adafruit_NeoPixel *Plugin_142_pixels;
+//#include <*.h>   - no external lib required
 
 static float Plugin_142_hsvPrev[3] = {0,0,0};
 static float Plugin_142_hsvDest[3] = {0,0,0};
 static long millisFadeBegin = 0;
 static long millisFadeEnd = 0;
-static long millisFadeTime = 1000;
+static long millisFadeTime = 3000;
+static float Plugin_142_cycle = 0;
+
+static int Plugin_142_pin[4] = {-1,-1,-1,-1};
+static int Plugin_142_lowActive = false;
 
 #define PLUGIN_142
 #define PLUGIN_ID_142         142
@@ -113,13 +113,20 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_INIT:
       {
+        String log = F("RGB-S: Pin ");
         for (byte i=0; i<4; i++)
         {
           int pin = Settings.TaskDevicePluginConfig[event->TaskIndex][i];
+          Plugin_142_pin[i] = pin;
           if (pin >= 0)
             pinMode(pin, OUTPUT);
+          log += pin;
+          log += F(" ");
         }
-        Output(event->TaskIndex, Plugin_142_hsvDest);
+        Plugin_142_lowActive = Settings.TaskDevicePin1Inversed[event->TaskIndex];
+        addLog(LOG_LEVEL_INFO, log);
+
+        Output(Plugin_142_hsvDest);
         //if (!Plugin_142_pixels)
         {
           //Plugin_142_pixels = new Adafruit_NeoPixel(Settings.TaskDevicePluginConfig[event->TaskIndex][0], Settings.TaskDevicePin1[event->TaskIndex], NEO_GRB + NEO_KHZ800);
@@ -172,6 +179,14 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           bNewValue = true;
         }
 
+        if (command == F("cycle"))
+        {
+          Plugin_142_cycle = event->Par1;
+          if (Plugin_142_cycle > 0)
+            Plugin_142_cycle = (1.0 / 50.0) / Plugin_142_cycle;
+          success = true;
+        }
+
         if (bNewValue)
         {
           hsvClamp(Plugin_142_hsvDest);
@@ -186,7 +201,7 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           millisFadeBegin = millis();
           millisFadeEnd = millisFadeBegin + millisFadeTime;
 
-          String log = F("hsv:  ");
+          String log = F("RGB-S: hsv ");
           for (byte i=0; i<3; i++)
           {
             log += toString(Plugin_142_hsvDest[i], 3);
@@ -194,7 +209,7 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           }
           addLog(LOG_LEVEL_INFO, log);
 
-          Output(event->TaskIndex, Plugin_142_hsvDest);
+          //Output(Plugin_142_hsvDest);
           success = true;
         }
         break;
@@ -218,9 +233,16 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
       }
 
     case PLUGIN_FIFTY_PER_SECOND:
-      break;
+    //case PLUGIN_TEN_PER_SECOND:
+
+      //break;
       {
-        if (millisFadeEnd != 0)   //fading required?
+        if (Plugin_142_cycle > 0)   // cyclic colors
+        {
+          Plugin_142_hsvDest[0] += Plugin_142_cycle;
+          Output(Plugin_142_hsvDest);
+        }
+        else if (millisFadeEnd != 0)   //fading required?
         {
           float hsv[3];
           long millisAct = millis();
@@ -234,17 +256,17 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           }
           else   //just fading
           {
-            float fade = (millisAct-millisFadeBegin) / (millisFadeEnd-millisFadeBegin);
+            float fade = float(millisAct-millisFadeBegin) / float(millisFadeEnd-millisFadeBegin);
 
-            fade = 1.0-fade;   //smooth fading out
-            fade *= fade;
-            fade = 1.0-fade;
+            //fade = 1.0-fade;   //smooth fading out
+            //fade *= fade;
+            //fade = 1.0-fade;
 
             for (byte i=0; i<3; i++)
               hsv[i] = mix(Plugin_142_hsvPrev[i], Plugin_142_hsvDest[i], fade);
           }
 
-          Output(event->TaskIndex, hsv);
+          Output(hsv);
         }
         success = true;
         break;
@@ -279,60 +301,76 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
   return success;
 }
 
-void Output(int TaskIndex, float* hsvIn)
+void Output(float* hsvIn)
 {
   float hsvw[4];
   float rgbw[4];
+
+  String log = F("RGB-S: RGBW ");
 
   for (byte i=0; i<3; i++)
     hsvw[i] = hsvIn[i];
 
   hsvClamp(hsvw);
 
-  if (0)   //has white channel?
+  if (Plugin_142_pin[3] >= 0)   //has white channel?
   {
     hsvw[3] = (1.0 - hsvw[1]) * hsvw[2];   // w = (1-s)*v
     hsvw[2] *= hsvw[1];   // v = s*v
   }
   else
-    hsvw[3] = 0.0;
+    hsvw[3] = 0.0;   // w = 0
 
-
+  //convert to RGB color space
   hsv2rgb(hsvw, rgbw);
   rgbw[3] = hsvw[3];
+
+  //reduce power for mix colors
+  float cv = sqrt(rgbw[0]*rgbw[0] + rgbw[1]*rgbw[1] + rgbw[2]*rgbw[2]);
+  if (cv > 0.0)
+  {
+    cv = hsvw[2] / cv;
+    for (byte i=0; i<3; i++)
+      rgbw[i] *= cv;
+  }
 
   int actRGBW[4];
   static int lastRGBW[4] = {-1,-1,-1,-1};
 
-  String log = F("RGBW:  ");
-
   for (byte i=0; i<4; i++)
   {
-    int pin = Settings.TaskDevicePluginConfig[TaskIndex][i];
+    int pin = Plugin_142_pin[i];
+    log += pin;
+    log += F("=");
     if (pin >= 0)
     {
       rgbw[i] *= rgbw[i];   //simple gamma correction
 
       actRGBW[i] = rgbw[i] * PWMRANGE + 0.5;
 
-      log += String(rgbw[i], DEC);
-      log += F(" ");
+      log += String(actRGBW[i], DEC);
 
-      if (Settings.TaskDevicePin1Inversed[TaskIndex])
+      if (Plugin_142_lowActive)   //low active or common annode LED?
         actRGBW[i] = PWMRANGE - actRGBW[i];
 
-      if (lastRGBW[i] != actRGBW[i])
+      if (lastRGBW[i] != actRGBW[i])   //has changed since last output?
       {
         lastRGBW[i] = actRGBW[i];
 
         analogWrite(pin, actRGBW[i]);
         setPinState(PLUGIN_ID_142, pin, PIN_MODE_PWM, actRGBW[i]);
+
+        log += F("~");
       }
+      log += F(" ");
+    }
+    else
+    {
+      log += F("- ");
     }
   }
 
-  addLog(LOG_LEVEL_INFO, log);
-
+  addLog(LOG_LEVEL_DEBUG, log);
 }
 
 // HSV->RGB conversion based on GLSL version
