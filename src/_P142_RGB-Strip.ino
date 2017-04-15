@@ -15,7 +15,7 @@ static float Plugin_142_hsvPrev[3] = {0,0,0};
 static float Plugin_142_hsvDest[3] = {0,0,0};
 static long millisFadeBegin = 0;
 static long millisFadeEnd = 0;
-static long millisFadeTime = 3000;
+static long millisFadeTime = 1500;
 static float Plugin_142_cycle = 0;
 
 static int Plugin_142_pin[4] = {-1,-1,-1,-1};
@@ -127,11 +127,7 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
         addLog(LOG_LEVEL_INFO, log);
 
         Output(Plugin_142_hsvDest);
-        //if (!Plugin_142_pixels)
-        {
-          //Plugin_142_pixels = new Adafruit_NeoPixel(Settings.TaskDevicePluginConfig[event->TaskIndex][0], Settings.TaskDevicePin1[event->TaskIndex], NEO_GRB + NEO_KHZ800);
-          //Plugin_142_pixels->begin(); // This initializes the NeoPixel library.
-        }
+
         success = true;
         break;
       }
@@ -161,13 +157,29 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           bNewValue = true;
         }
 
+        if (command == F("hsl"))
+        {
+          float hsl[3];
+          hsl[0] = event->Par1 / 360.0;   //Hue
+          hsl[1] = event->Par2 / 100.0;   //Saturation
+          hsl[2] = event->Par3 / 100.0;   //Lightness
+          hsl2hsv(hsl, Plugin_142_hsvDest);
+          bNewValue = true;
+        }
+
         if (command == F("hue"))
         {
           Plugin_142_hsvDest[0] = event->Par1 / 360.0;   //Hue
           bNewValue = true;
         }
 
-        if (command == F("dimm"))
+        if (command == F("sat"))
+        {
+          Plugin_142_hsvDest[1] = event->Par1 / 100.0;   //Saturation
+          bNewValue = true;
+        }
+
+        if (command == F("val") || command == F("dimm"))
         {
           Plugin_142_hsvDest[2] = event->Par1 / 100.0;   //Value/Brightness
           bNewValue = true;
@@ -209,7 +221,6 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           }
           addLog(LOG_LEVEL_INFO, log);
 
-          //Output(Plugin_142_hsvDest);
           success = true;
         }
         break;
@@ -221,21 +232,11 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
         UserVar[event->BaseVarIndex + 1] = Plugin_142_hsvDest[1] * 100.0;
         UserVar[event->BaseVarIndex + 2] = Plugin_142_hsvDest[2] * 100.0;
         success = true;
-
-        //String log = F("RGBW:  ");
-        //log += i;
-        //log += F(" bytes to attempt to fix buffer alignment");
-        //log += String(mhzResp[0], HEX);
-        //log += F(" ");
-        //addLog(LOG_LEVEL_ERROR, log);
-        //addLog(LOG_LEVEL_INFO, log);
         break;
       }
 
     case PLUGIN_FIFTY_PER_SECOND:
     //case PLUGIN_TEN_PER_SECOND:
-
-      //break;
       {
         if (Plugin_142_cycle > 0)   // cyclic colors
         {
@@ -257,10 +258,8 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           else   //just fading
           {
             float fade = float(millisAct-millisFadeBegin) / float(millisFadeEnd-millisFadeBegin);
-
-            //fade = 1.0-fade;   //smooth fading out
-            //fade *= fade;
-            //fade = 1.0-fade;
+            fade = valueClamp(fade);
+            fade = valueSmoothFadingOut(fade);
 
             for (byte i=0; i<3; i++)
               hsv[i] = mix(Plugin_142_hsvPrev[i], Plugin_142_hsvDest[i], fade);
@@ -324,7 +323,7 @@ void Output(float* hsvIn)
   //convert to RGB color space
   hsv2rgb(hsvw, rgbw);
   rgbw[3] = hsvw[3];
-
+/*
   //reduce power for mix colors
   float cv = sqrt(rgbw[0]*rgbw[0] + rgbw[1]*rgbw[1] + rgbw[2]*rgbw[2]);
   if (cv > 0.0)
@@ -333,20 +332,23 @@ void Output(float* hsvIn)
     for (byte i=0; i<3; i++)
       rgbw[i] *= cv;
   }
-
+*/
   int actRGBW[4];
   static int lastRGBW[4] = {-1,-1,-1,-1};
 
+  //converting and corrections for each RGBW value
   for (byte i=0; i<4; i++)
   {
     int pin = Plugin_142_pin[i];
     log += pin;
     log += F("=");
-    if (pin >= 0)
+    if (pin >= 0)   //pin assigned for RGBW value
     {
       rgbw[i] *= rgbw[i];   //simple gamma correction
 
       actRGBW[i] = rgbw[i] * PWMRANGE + 0.5;
+      if (actRGBW[i] > PWMRANGE)
+        actRGBW[i] = PWMRANGE;
 
       log += String(actRGBW[i], DEC);
 
@@ -407,6 +409,16 @@ float* rgb2hsv(const float* rgb, float* hsv)
   return hsv;
 }
 
+float* hsl2hsv(const float* hsl, float* hsv)
+{
+  float B = ( 2.0*hsl[2] + hsl[1] * (1.0-(2.0*hsl[2]-1.0)) ) / 2.0;   // B = ( 2L+Shsl(1-|2L-1|) ) / 2
+  float S = (B!=0) ? 2.0*(B-hsl[2]) / B : 0.0;   // S = 2(B-L) / B
+  hsv[0] = hsl[0];
+  hsv[1] = S;
+  hsv[2] = B;
+  return hsv;
+}
+
 float* hsvClamp(float* hsv)
 {
   while (hsv[0] > 1.0)
@@ -422,4 +434,22 @@ float* hsvClamp(float* hsv)
       hsv[i] = 1.0;
   }
   return hsv;
+}
+
+float valueClamp(float v)
+{
+  if (v < 0.0)
+    v = 0.0;
+  if (v > 1.0)
+    v = 1.0;
+  return v;
+}
+
+float valueSmoothFadingOut(float v)
+{
+  v = valueClamp(v);
+  v = 1.0-v;   //smooth fading out
+  v *= v;
+  v = 1.0-v;
+  return v;
 }
