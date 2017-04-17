@@ -5,7 +5,7 @@
 
 #define PLUGIN_014
 #define PLUGIN_ID_014        14
-#define PLUGIN_NAME_014       "Temperature & Humidity - SI7021"
+#define PLUGIN_NAME_014       "Environment - SI7021/HTU21D"
 #define PLUGIN_VALUENAME1_014 "Temperature"
 #define PLUGIN_VALUENAME2_014 "Humidity"
 
@@ -136,8 +136,7 @@ boolean Plugin_014(byte function, struct EventStruct *event, String& string)
           addLog(LOG_LEVEL_INFO,log);
           */
         } else {
-          String log = F("SI7021 : Read Error!");
-          addLog(LOG_LEVEL_INFO,log);
+          addLog(LOG_LEVEL_INFO,F("SI7021 : Read Error!"));
         }
 
         break;
@@ -310,8 +309,7 @@ int8_t Plugin_014_si7021_startConv(uint8_t datatype, uint8_t resolution)
 
   // Check CRC of data received
   if(Plugin_014_si7021_checkCRC(raw, checksum) != 0) {
-    String log = F("SI7021 : checksum error!");
-    addLog(LOG_LEVEL_INFO,log);
+    addLog(LOG_LEVEL_INFO,F("SI7021 : checksum error!"));
     return -1; 
   }
 

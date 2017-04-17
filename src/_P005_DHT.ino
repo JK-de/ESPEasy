@@ -4,7 +4,7 @@
 
 #define PLUGIN_005
 #define PLUGIN_ID_005         5
-#define PLUGIN_NAME_005       "Temperature & Humidity - DHT"
+#define PLUGIN_NAME_005       "Environment - DHT11/12/22"
 #define PLUGIN_VALUENAME1_005 "Temperature"
 #define PLUGIN_VALUENAME2_005 "Humidity"
 
@@ -117,8 +117,7 @@ boolean Plugin_005(byte function, struct EventStruct *event, String& string)
                 dht_dat[i] = data;
               else
               {
-                String log = F("DHT  : protocol timeout!");
-                addLog(LOG_LEVEL_ERROR, log);
+                addLog(LOG_LEVEL_ERROR, F("DHT  : protocol timeout!"));
                 error = true;
               }
             }
@@ -172,8 +171,7 @@ boolean Plugin_005(byte function, struct EventStruct *event, String& string)
         }  // !dht
         if(!success)
         {
-          String log = F("DHT  : No reading!");
-          addLog(LOG_LEVEL_INFO, log);
+          addLog(LOG_LEVEL_INFO, F("DHT  : No reading!"));
           UserVar[event->BaseVarIndex] = NAN;
           UserVar[event->BaseVarIndex + 1] = NAN;
         }

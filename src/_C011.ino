@@ -88,10 +88,10 @@ boolean CPlugin_011(byte function, struct EventStruct *event, String& string)
         String httpuri = WebServer.arg(F("P011httpuri"));
         String httpheader = WebServer.arg(F("P011httpheader"));
         String httpbody = WebServer.arg(F("P011httpbody"));
-        strncpy(customConfig.HttpMethod, httpmethod.c_str(), sizeof(customConfig.HttpMethod));
-        strncpy(customConfig.HttpUri, httpuri.c_str(), sizeof(customConfig.HttpUri));
-        strncpy(customConfig.HttpHeader, httpheader.c_str(), sizeof(customConfig.HttpHeader));
-        strncpy(customConfig.HttpBody, httpbody.c_str(), sizeof(customConfig.HttpBody));
+        strlcpy(customConfig.HttpMethod, httpmethod.c_str(), sizeof(customConfig.HttpMethod));
+        strlcpy(customConfig.HttpUri, httpuri.c_str(), sizeof(customConfig.HttpUri));
+        strlcpy(customConfig.HttpHeader, httpheader.c_str(), sizeof(customConfig.HttpHeader));
+        strlcpy(customConfig.HttpBody, httpbody.c_str(), sizeof(customConfig.HttpBody));
         SaveCustomControllerSettings((byte*)&customConfig, sizeof(customConfig));
         break;
       }
@@ -129,22 +129,24 @@ boolean HTTPSend011(struct EventStruct *event)
   P011_ConfigStruct customConfig;
   LoadCustomControllerSettings((byte*)&customConfig, sizeof(customConfig));
 
-  char log[80];
+  // char log[80];
   boolean success = false;
-  char host[20];
-  sprintf_P(host, PSTR("%u.%u.%u.%u"), ControllerSettings.IP[0], ControllerSettings.IP[1], ControllerSettings.IP[2], ControllerSettings.IP[3]);
-  char tmp[22];
-  strcpy_P(tmp, PSTR("HTTP : connecting to "));
-  sprintf_P(log, PSTR("%s%s using port %u"), tmp, host, ControllerSettings.Port);
-  addLog(LOG_LEVEL_DEBUG, log);
+  // char host[20];
+  IPAddress host(ControllerSettings.IP[0], ControllerSettings.IP[1], ControllerSettings.IP[2], ControllerSettings.IP[3]);
+  // sprintf_P(host, PSTR("%u.%u.%u.%u"), ControllerSettings.IP[0], ControllerSettings.IP[1], ControllerSettings.IP[2], ControllerSettings.IP[3]);
+  // char tmp[22];
+  // strcpy_P(tmp, PSTR("HTTP : connecting to "));
+  // sprintf_P(log, PSTR("%s%s using port %u"), tmp, host, ControllerSettings.Port);
+  // addLog(LOG_LEVEL_DEBUG, log);
+
+  addLog(LOG_LEVEL_DEBUG, String(F("HTTP : connecting to "))+host.toString()+":"+ControllerSettings.Port);
 
   // Use WiFiClient class to create TCP connections
   WiFiClient client;
    if (!client.connect(host, ControllerSettings.Port))
   {
     connectionFailures++;
-    strcpy_P(log, PSTR("HTTP : connection failed"));
-    addLog(LOG_LEVEL_ERROR, log);
+    addLog(LOG_LEVEL_ERROR, F("HTTP : connection failed"));
     return false;
   }
   statusLED(true);
@@ -154,7 +156,7 @@ boolean HTTPSend011(struct EventStruct *event)
   if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0)
     PluginCall(PLUGIN_GET_DEVICEVALUENAMES, event, dummyString);
 
-  String hostName = host;
+  String hostName = host.toString();
   if (ControllerSettings.UseDNS)
     hostName = ControllerSettings.HostName[event->ProtocolIndex];
 
@@ -187,23 +189,25 @@ boolean HTTPSend011(struct EventStruct *event)
 
   unsigned long timer = millis() + 200;
   while (!client.available() && millis() < timer)
-    delay(1);
+    yield();
 
   // Read all the lines of the reply from server and print them to Serial
   while (client.available()) {
-    String line = client.readStringUntil('\n');
-    line.toCharArray(log, 80);
-    addLog(LOG_LEVEL_DEBUG_MORE, log);
-    if (line.substring(0, 10) == F("HTTP/1.1 2"))
+    // String line = client.readStringUntil('\n');
+    String line;
+    safeReadStringUntil(client, line, '\n');
+
+
+    // line.toCharArray(log, 80);
+    addLog(LOG_LEVEL_DEBUG_MORE, line);
+    if (line.startsWith(F("HTTP/1.1 2")))
     {
-      strcpy_P(log, PSTR("HTTP : Success!"));
-      addLog(LOG_LEVEL_DEBUG, log);
+      addLog(LOG_LEVEL_DEBUG, F("HTTP : Success!"));
       success = true;
     }
-    delay(1);
+    yield();
   }
-  strcpy_P(log, PSTR("HTTP : closing connection"));
-  addLog(LOG_LEVEL_DEBUG, log);
+  addLog(LOG_LEVEL_DEBUG, F("HTTP : closing connection"));
 
   client.flush();
   client.stop();
@@ -216,19 +220,32 @@ void DeleteNotNeededValues(String &s, byte numberOfValuesWanted)
 	numberOfValuesWanted++;
 	for (byte i=1; i < 5; i++)
 	{
-		while(s.indexOf(String(F("%")) + i + F("%")) != -1 && s.indexOf(String(F("%/")) + i + F("%")) != -1 )
-		{
-			if (i<numberOfValuesWanted)
-			{
-				String p = s.substring(s.indexOf(String(F("%")) + i + F("%")),s.indexOf(String(F("%/")) + i + F("%"))+4);
-				s.replace(p, p.substring(3, (p.length() -4)));
-			}
-			else
-			{
-				String p = s.substring(s.indexOf(String(F("%")) + i + F("%")),s.indexOf(String(F("%/")) + i + F("%"))+4);
+    String startToken=String(F("%")) + i + F("%");
+    String endToken=String(F("%/")) + i + F("%");
+
+    //do we want to keep this one?
+    if (i<numberOfValuesWanted)
+    {
+      //yes, so just remove the tokens
+      s.replace(startToken, "");
+      s.replace(endToken, "");
+    }
+    else
+    {
+      //remove all the whole strings including tokes
+      int startIndex=s.indexOf(startToken);
+      int endIndex=s.indexOf(endToken);
+      while(startIndex != -1 && endIndex != -1  && endIndex>startIndex)
+  		{
+        String p = s.substring(startIndex,endIndex+4);
+        //remove the whole string including tokens
 				s.replace(p, F(""));
-			}
-		}
+
+        //find next ones
+        startIndex=s.indexOf(startToken);
+        endIndex=s.indexOf(endToken);
+  		}
+    }
 	}
 }
 
@@ -248,8 +265,7 @@ void ReplaceTokenByValue(String& s, struct EventStruct *event)
 // example string:
 // write?db=testdb&type=%1%%vname1%%/1%%2%;%vname2%%/2%%3%;%vname3%%/3%%4%;%vname4%%/4%&value=%1%%val1%%/1%%2%;%val2%%/2%%3%;%val3%%/3%%4%;%val4%%/4%
 //	%1%%vname1%,Standort=%tskname% Wert=%val1%%/1%%2%%LF%%vname2%,Standort=%tskname% Wert=%val2%%/2%%3%%LF%%vname3%,Standort=%tskname% Wert=%val3%%/3%%4%%LF%%vname4%,Standort=%tskname% Wert=%val4%%/4%
-	String log = F("HTTP before parsing: ");
-	addLog(LOG_LEVEL_DEBUG_MORE, log);
+	addLog(LOG_LEVEL_DEBUG_MORE, F("HTTP before parsing: "));
 	addLog(LOG_LEVEL_DEBUG_MORE, s);
 
 	switch (event->sensorType)
@@ -283,10 +299,10 @@ void ReplaceTokenByValue(String& s, struct EventStruct *event)
 		}
 	}
 
-	log = F("HTTP after parsing: ");
-	addLog(LOG_LEVEL_DEBUG_MORE, log);
+	addLog(LOG_LEVEL_DEBUG_MORE, F("HTTP after parsing: "));
 	addLog(LOG_LEVEL_DEBUG_MORE, s);
 
+  //NOTE: cant we just call parseTemplate() for all the standard stuff??
   String strTime = "";
   if (hour() < 10)
     strTime += F(" ");
@@ -301,10 +317,10 @@ void ReplaceTokenByValue(String& s, struct EventStruct *event)
 		newString.replace(F("%vcc%"), String(vcc));
 	#endif
 
-  IPAddress ip = WiFi.localIP();
-  char strIP[20];
-  sprintf_P(strIP, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
-  s.replace(F("%ip%"), strIP);
+  // IPAddress ip = WiFi.localIP();
+  // char strIP[20];
+  // sprintf_P(strIP, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
+  s.replace(F("%ip%"),WiFi.localIP().toString());
 
   s.replace(F("%sysload%"), String(100 - (100 * loopCounterLast / loopCounterMax)));
   s.replace(F("%uptime%"), String(wdcounter / 2));
@@ -327,8 +343,7 @@ void ReplaceTokenByValue(String& s, struct EventStruct *event)
     s.replace(F("%val3%"), toString(UserVar[event->BaseVarIndex + 2], ExtraTaskSettings.TaskDeviceValueDecimals[2]));
     s.replace(F("%val4%"), toString(UserVar[event->BaseVarIndex + 3], ExtraTaskSettings.TaskDeviceValueDecimals[3]));
   }
-	log = F("HTTP after replacements: ");
-	addLog(LOG_LEVEL_DEBUG_MORE, log);
+	addLog(LOG_LEVEL_DEBUG_MORE, F("HTTP after replacements: "));
 	addLog(LOG_LEVEL_DEBUG_MORE, s);
 }
 

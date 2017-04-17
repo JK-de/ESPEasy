@@ -94,12 +94,10 @@ boolean NPlugin_001_send(String aDomain , String aTo, String aFrom, String aSub,
     client.stop();
 
     if (myStatus == true) {
-      String log = F("EMAIL: Connection Closed Successfully");
-      addLog(LOG_LEVEL_INFO, log);
+      addLog(LOG_LEVEL_INFO, F("EMAIL: Connection Closed Successfully"));
     }
     else {
-      String log = F("EMAIL: Connection Closed With Error");
-      addLog(LOG_LEVEL_ERROR, log);
+      addLog(LOG_LEVEL_ERROR, F("EMAIL: Connection Closed With Error"));
     }
 
   }
@@ -130,7 +128,9 @@ boolean NPlugin_001_MTA(WiFiClient client, String aStr, String aWaitForPattern)
 
     yield();
 
-    String line = client.readStringUntil('\n');
+    // String line = client.readStringUntil('\n');
+    String line;
+    safeReadStringUntil(client, line, '\n');
 
     addLog(LOG_LEVEL_DEBUG, line);
 
