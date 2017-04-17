@@ -1,7 +1,7 @@
 //#######################################################################################################
 //#################################### Plugin 142: RGB-Strip ############################################
 //#######################################################################################################
-// written by Jochen Krapf
+// written by Jochen Krapf (jk@nerd2nerd.org)
 
 // List of commands:
 // (1) RGB,<red 0-255>,<green 0-255>,<blue 0-255>
@@ -21,6 +21,7 @@
 
 static float Plugin_142_hsvPrev[3] = {0,0,0};
 static float Plugin_142_hsvDest[3] = {0,0,0};
+static float Plugin_142_hsvAct[3] = {0,0,0};
 static long millisFadeBegin = 0;
 static long millisFadeEnd = 0;
 static long millisFadeTime = 1500;
@@ -36,8 +37,8 @@ static int Plugin_142_lowActive = false;
 #define PLUGIN_VALUENAME2_142 "S"
 #define PLUGIN_VALUENAME3_142 "V"
 
-#define PLUGIN_PWM_OFFSET 6   //ESP-PWM has flickering problems with values <6 and >1017. If problem is fixed in ESP libs the define can be set to 0 (or code removed)
-
+#define PLUGIN_PWM_OFFSET 0   //ESP-PWM has flickering problems with values <6 and >1017. If problem is fixed in ESP libs the define can be set to 0 (or code removed)
+//see https://github.com/esp8266/Arduino/issues/836   https://github.com/SmingHub/Sming/issues/70   https://github.com/espruino/Espruino/issues/914
 boolean Plugin_142(byte function, struct EventStruct *event, String& string)
 {
   boolean success = false;
@@ -196,9 +197,9 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
 
         if (command == F("cycle"))
         {
-          Plugin_142_cycle = event->Par1;
+          Plugin_142_cycle = event->Par1;   //seconds for a full color hue circle
           if (Plugin_142_cycle > 0)
-            Plugin_142_cycle = (1.0 / 50.0) / Plugin_142_cycle;
+            Plugin_142_cycle = (1.0 / 50.0) / Plugin_142_cycle;   //50Hz based increment value
           success = true;
         }
 
@@ -209,7 +210,7 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
 
           if (millisFadeBegin!=0)   //still fading?
             for (byte i=0; i<3; i++)
-              Plugin_142_hsvPrev[i] = Plugin_142_hsvDest[i];
+              Plugin_142_hsvPrev[i] = Plugin_142_hsvAct[i];
 
           //get the shortest way around the color circle
           if ((Plugin_142_hsvDest[0]-Plugin_142_hsvPrev[0]) > 0.5)
@@ -228,6 +229,7 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
           }
           addLog(LOG_LEVEL_INFO, log);
 
+          Plugin_142_cycle = 0;   //ends cycle loop
           success = true;
         }
         break;
@@ -248,19 +250,20 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
         if (Plugin_142_cycle > 0)   // cyclic colors
         {
           Plugin_142_hsvDest[0] += Plugin_142_cycle;
+          Plugin_142_hsvCopy(Plugin_142_hsvDest, Plugin_142_hsvPrev);
+          Plugin_142_hsvCopy(Plugin_142_hsvDest, Plugin_142_hsvAct);
           Plugin_142_Output(Plugin_142_hsvDest);
         }
         else if (millisFadeEnd != 0)   //fading required?
         {
-          float hsv[3];
           long millisAct = millis();
 
           if (millisAct >= millisFadeEnd)   //destination reached?
           {
             millisFadeBegin = 0;
             millisFadeEnd = 0;
-            for (byte i=0; i<3; i++)
-              hsv[i] = Plugin_142_hsvPrev[i] = Plugin_142_hsvDest[i];
+            Plugin_142_hsvCopy(Plugin_142_hsvDest, Plugin_142_hsvPrev);
+            Plugin_142_hsvCopy(Plugin_142_hsvDest, Plugin_142_hsvAct);
           }
           else   //just fading
           {
@@ -269,10 +272,10 @@ boolean Plugin_142(byte function, struct EventStruct *event, String& string)
             fade = Plugin_142_valueSmoothFadingOut(fade);
 
             for (byte i=0; i<3; i++)
-              hsv[i] = mix(Plugin_142_hsvPrev[i], Plugin_142_hsvDest[i], fade);
+              Plugin_142_hsvAct[i] = mix(Plugin_142_hsvPrev[i], Plugin_142_hsvDest[i], fade);
           }
 
-          Plugin_142_Output(hsv);
+          Plugin_142_Output(Plugin_142_hsvAct);
         }
         success = true;
         break;
@@ -289,9 +292,7 @@ void Plugin_142_Output(float* hsvIn)
 
   String log = F("RGB-S: RGBW ");
 
-  for (byte i=0; i<3; i++)
-    hsvw[i] = hsvIn[i];
-
+  Plugin_142_hsvCopy(hsvIn, hsvw);
   Plugin_142_hsvClamp(hsvw);
 
   if (Plugin_142_pin[3] >= 0)   //has white channel?
@@ -311,6 +312,7 @@ void Plugin_142_Output(float* hsvIn)
   if (cv > 0.0)
   {
     cv = hsvw[2] / cv;
+    cv = mix(1.0, cv, 0.42);
     for (byte i=0; i<3; i++)
       rgbw[i] *= cv;
   }
@@ -341,7 +343,7 @@ void Plugin_142_Output(float* hsvIn)
     }
   }
 
-  if (actRGBW[0] == PLUGIN_PWM_OFFSET && actRGBW[1] == PLUGIN_PWM_OFFSET && actRGBW[2] == PLUGIN_PWM_OFFSET)
+  if (PLUGIN_PWM_OFFSET != 0 && actRGBW[0] == PLUGIN_PWM_OFFSET && actRGBW[1] == PLUGIN_PWM_OFFSET && actRGBW[2] == PLUGIN_PWM_OFFSET)
     actRGBW[0] = actRGBW[1] = actRGBW[2] = 0;
 
   //output to PWM
@@ -404,6 +406,7 @@ float* Plugin_142_rgb2hsv(const float* rgb, float* hsv)
   return hsv;
 }
 
+//see http://codeitdown.com/hsl-hsb-hsv-color/
 float* Plugin_142_hsl2hsv(const float* hsl, float* hsv)
 {
   float B = ( 2.0*hsl[2] + hsl[1] * (1.0-(2.0*hsl[2]-1.0)) ) / 2.0;   // B = ( 2L+Shsl(1-|2L-1|) ) / 2
@@ -412,6 +415,13 @@ float* Plugin_142_hsl2hsv(const float* hsl, float* hsv)
   hsv[1] = S;
   hsv[2] = B;
   return hsv;
+}
+
+float* Plugin_142_hsvCopy(const float* hsvSrc, float* hsvDst)
+{
+  for (byte i=0; i<3; i++)
+    hsvDst[i] = hsvSrc[i];
+  return hsvDst;
 }
 
 float* Plugin_142_hsvClamp(float* hsv)
