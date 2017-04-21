@@ -39,6 +39,8 @@ static int Plugin_142_lowActive = false;
 
 #define PLUGIN_PWM_OFFSET 0   //ESP-PWM has flickering problems with values <6 and >1017. If problem is fixed in ESP libs the define can be set to 0 (or code removed)
 //see https://github.com/esp8266/Arduino/issues/836   https://github.com/SmingHub/Sming/issues/70   https://github.com/espruino/Espruino/issues/914
+
+
 boolean Plugin_142(byte function, struct EventStruct *event, String& string)
 {
   boolean success = false;
