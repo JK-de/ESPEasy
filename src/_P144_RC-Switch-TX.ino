@@ -5,12 +5,32 @@
 
 // List of commands:
 // (1) RC,<param>
+// (2) RC,<param>,<param>,<param>
 
 // List of RC params:
 // (a) SEND=<binary_code>
+//     Send binary code with any length ("RC,SEND=000000000001010100010001")
+// (b) SEND=<tristate_code>
+//     Send tristate code with any length ("RC,SEND=00000FFF0F0F")
+// (c) SENDDEC=<decimal_code>
+//     Send 24 bit decimal code ("RC,SENDDEC=5393")
+// (d) ON=<binary_code>
+//     Send binary code for simple 10 DIP switch devices ("RC,ON=1010100010")
+// (e) ON=<1..4><1..4>
+//     Send switch position for simple 2 rotary switch devices ("RC,ON=42")
+// (f) ON=<a..f><1..4><1..4>
+//     Send switch position for Intertechno devices ("RC,ON=a42")
+// (f) OFF=   as ON...
+// (g) PROTOCOL=<number>
+//     Set protocoln for devices ("RC,PROTOCOL=2") default=1
+// (h) PULSE=<number>
+//     Set pulse length ("RC,PULSE=320") default=320
+// (i) REPEAT=<number>
+//     Set number of transmission repeats ("RC,REPEAT=15") default=?
+//
+// Combinations:
+// e.g. "RC,PROTOCOL=2,PULSE=320,REPEAT=15,SEND=000000000001010100010001"
 
-// Usage:
-// (1a): Send 24 bit binary code ("RC,SEND=000000000001010100010001")
 
 #include <RCSwitch.h>   //https://github.com/sui77/rc-switch.git
 
@@ -52,7 +72,6 @@ boolean Plugin_144(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WEBFORM_LOAD:
       {
-        string += F("<TR><TD>TEST<TD>");
         success = true;
         break;
       }
@@ -78,19 +97,16 @@ boolean Plugin_144(byte function, struct EventStruct *event, String& string)
         }
 
 
+        if (Settings.TaskDevicePin1[event->TaskIndex] >= 0)
+          pinMode(Settings.TaskDevicePin1[event->TaskIndex], OUTPUT);
         if (Settings.TaskDevicePin2[event->TaskIndex] >= 0)
           pinMode(Settings.TaskDevicePin2[event->TaskIndex], OUTPUT);
+        if (Settings.TaskDevicePin3[event->TaskIndex] >= 0)
+          pinMode(Settings.TaskDevicePin3[event->TaskIndex], OUTPUT);
 
         for (byte i=0; i<3; i++)
           if (Settings.TaskDevicePin[i][event->TaskIndex] >= 0)
             pinMode(Settings.TaskDevicePin[i][event->TaskIndex], OUTPUT);
-
-        Settings.TaskDevicePin2[event->TaskIndex] = 42;
-        if (Settings.TaskDevicePin[1][event->TaskIndex]==42)
-          addLog(LOG_LEVEL_INFO, "_42_");
-        Settings.TaskDevicePin3[11] = 23;
-        if (Settings.TaskDevicePin[2][11]==23)
-          addLog(LOG_LEVEL_INFO, "_23_");
 
         success = true;
         break;
@@ -112,22 +128,59 @@ boolean Plugin_144(byte function, struct EventStruct *event, String& string)
           param = parseString(string, paramIdx++);
           while (param.length())
           {
-            addLog(LOG_LEVEL_INFO, param);
+            addLog(LOG_LEVEL_DEBUG_MORE, param);
 
             int index = param.indexOf('=');
             if (index > 0)
             {
               String paramKey = param.substring(0, index);
               String paramVal = param.substring(index+1);
-              paramKey.toLowerCase();
+              paramKey.toUpperCase();
 
-              addLog(LOG_LEVEL_INFO, paramKey);
-              addLog(LOG_LEVEL_INFO, paramVal);
+              addLog(LOG_LEVEL_DEBUG_MORE, paramKey);
+              addLog(LOG_LEVEL_DEBUG_MORE, paramVal);
 
-              if (paramKey == F("send"))
-                {
-                  Plugin_144_RC.send("000000000001010100010001");
-                }
+              if (paramKey == F("SEND"))
+              {
+                if (paramVal.indexOf("F") >= 0)
+                  Plugin_144_RC.sendTriState(&(paramVal[0]));
+                else
+                  Plugin_144_RC.send(&(paramVal[0]));
+              }
+              if (paramKey == F("SENDDEC"))
+              {
+                Plugin_144_RC.send(paramVal.toInt(), 24);
+              }
+              if (paramKey == F("ON"))
+              {
+                if (paramVal.length()==10)
+                  Plugin_144_RC.switchOn(&(paramVal.substring(0, 4)[0]), &(paramVal.substring(5)[0]));
+                else if (paramVal.length()==2)
+                  Plugin_144_RC.switchOn(paramVal[0]-'0', paramVal[1]-'0');
+                else if (paramVal.length()==3)
+                  Plugin_144_RC.switchOn(paramVal[0], paramVal[1]-'0', paramVal[2]-'0');
+              }
+              if (paramKey == F("OFF"))
+              {
+                if (paramVal.length()==10)   //simple 10 DIP switch
+                  Plugin_144_RC.switchOff(&(paramVal.substring(0, 4)[0]), &(paramVal.substring(5)[0]));
+                else if (paramVal.length()==2)   //2x rotary switch 1..4
+                  Plugin_144_RC.switchOff(paramVal[0]-'0', paramVal[1]-'0');
+                else if (paramVal.length()==3)   //Intertechno outlets
+                  Plugin_144_RC.switchOn(paramVal[0], paramVal[1]-'0', paramVal[2]-'0');
+              }
+              if (paramKey == F("PROTOCOL"))
+              {
+                  Plugin_144_RC.setProtocol(paramVal.toInt());
+              }
+              if (paramKey == F("PULSE"))
+              {
+                  Plugin_144_RC.setPulseLength(paramVal.toInt());
+              }
+              if (paramKey == F("REPEAT"))
+              {
+                  Plugin_144_RC.setRepeatTransmit(paramVal.toInt());
+              }
             }
 
             param = parseString(string, paramIdx++);
