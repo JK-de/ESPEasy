@@ -12,9 +12,9 @@
 
 #define PLUGIN_145
 #define PLUGIN_ID_145         145
-#define PLUGIN_NAME_145       "Dust Sensor SDS011 [TESTING]"
+#define PLUGIN_NAME_145       "Dust Sensor SDS011/SDS018"
 #define PLUGIN_VALUENAME1_145 "PM2.5"
-#define PLUGIN_VALUENAME2_145 "PM10"   // Temperature in C
+#define PLUGIN_VALUENAME2_145 "PM10"   // Dust in µg/m³
 #define PLUGIN_READ_TIMEOUT   3000
 
 boolean Plugin_145_init = false;
