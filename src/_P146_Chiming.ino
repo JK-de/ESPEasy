@@ -5,14 +5,6 @@
 
 // List of commands:
 // (1) RGB,<red 0-255>,<green 0-255>,<blue 0-255>
-// (2) HSV,<hue 0-360>,<saturation 0-100>,<value/brightness 0-100>
-// (3) HSL,<hue 0-360>,<saturation 0-100>,<lightness 0-100>
-// (4) HUE,<hue 0-360>
-// (5) SAT,<saturation 0-100>
-// (6) VAL,<value/brightness 0-100>
-// (7) DIMM,<value/brightness 0-100>
-// (8) OFF
-// (9) CYCLE,<time 1-999>   time for full color hue circle; 0 to return to normal mode
 
 // Usage:
 // (1): Set RGB Color to LED (eg. RGB,255,255,255)
@@ -26,20 +18,11 @@ static long Plugin_146_millisChimeTime = 200;
 static long Plugin_146_millisPauseTime = 1000;
 
 #define PLUGIN_146_FIFO_SIZE 32   // must be power of 2
-#define PLUGIN_146_FIFO_MASK (PLUGIN_146_BUFFER_SIZE-1)
+#define PLUGIN_146_FIFO_MASK (PLUGIN_146_FIFO_SIZE-1)
 
-static char Plugin_146_FIFO[PLUGIN_146_BUFFER_SIZE];
+static char Plugin_146_FIFO[PLUGIN_146_FIFO_SIZE];
 static byte Plugin_146_FIFO_IndexR = 0;
 static byte Plugin_146_FIFO_IndexW = 0;
-
-
-static float Plugin_146_hsvPrev[3] = {0,0,0};
-static float Plugin_146_hsvDest[3] = {0,0,0};
-static float Plugin_146_hsvAct[3] = {0,0,0};
-static long millisFadeBegin = 0;
-static long millisFadeEnd = 0;
-static long millisFadeTime = 1500;
-static float Plugin_146_cycle = 0;
 
 static int Plugin_146_pin[3] = {-1,-1,-1};
 static int Plugin_146_lowActive = false;
@@ -147,6 +130,12 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
         if (command == F("chime"))
         {
+          String param = parseString(string, 2);
+          byte i = 0;
+          while (param[i] != 0)
+          {
+            Plugin_146_WriteFIFO(param[i++]);
+          }
           success = true;
         }
 
@@ -158,15 +147,45 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
       {
         long millisAct = millis();
 
-        if (Plugin_146_millisChimeEnd > 0)   // just striking
+        if (Plugin_146_millisChimeEnd > 0)   // just striking?
         {
-          Plugin_146_hsvDest[0] += Plugin_146_cycle;
-          Plugin_146_hsvCopy(Plugin_146_hsvDest, Plugin_146_hsvPrev);
-          Plugin_146_hsvCopy(Plugin_146_hsvDest, Plugin_146_hsvAct);
-          Plugin_146_Output(Plugin_146_hsvDest);
+          if (Plugin_146_millisChimeEnd < millisAct)   // end reached?
+          {
+            for (byte i=0; i<3; i++)
+            {
+              if (Plugin_146_pin[i] >= 0)
+                digitalWrite(Plugin_146_pin[i], 0);
+            }
+            Plugin_146_millisChimeEnd = 0;
+          }
         }
-        else if (millisFadeEnd != 0)   //fading required?
+        else if (Plugin_146_millisPauseEnd > 0)   // just waiting?
         {
+          if (Plugin_146_millisPauseEnd < millisAct)   // end reached?
+          {
+            Plugin_146_millisPauseEnd = 0;
+          }
+        }
+        else
+        {
+          if (! Plugin_146_IsEmptyFIFO())
+          {
+            char c = Plugin_146_ReadFIFO();
+            Plugin_146_millisChimeEnd = millisAct + 100;
+            Plugin_146_millisPauseEnd = millisAct + 1000;
+
+            if (c >= '1' && c <= '7')
+            {
+              byte mask = 1;
+              for (byte i=0; i<3; i++)
+              {
+                if (Plugin_146_pin[i] >= 0)
+                  if (c & mask)
+                    digitalWrite(Plugin_146_pin[i], 1);
+                mask <<= 1;
+              }
+            }
+          }
 
         }
         success = true;
