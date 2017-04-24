@@ -23,6 +23,8 @@ import os
 TOTAL_IRAM = 32786;
 TOTAL_DRAM = 81920;
 
+env="dev_4096"
+
 sections = OrderedDict([
     ("data", "Initialized Data (RAM)"),
     ("rodata", "ReadOnly Data (RAM)"),
@@ -143,20 +145,28 @@ try:
     libs.remove("lib/pubsubclient")
     libs.sort()
 
+    #which plugins to test?
+    if len(sys.argv)>2:
+        test_plugins=sys.argv[2:]
+    else:
+        test_plugins=plugins
+    test_plugins.sort()
+
 
     #### disable all plugins and to get base size
-    for plugin in plugins:
+    for plugin in test_plugins:
         disable_plugin(plugin)
+
 
     # for lib in libs:
     #     disable_lib(lib)
 
     #build without plugins to get base memory usage
-    subprocess.check_call("platformio run --silent --environment dev_4096", shell=True)
+    subprocess.check_call("platformio run --silent --environment "+env, shell=True)
     # #two times, sometimes it changes a few bytes somehow
     # SEEMS TO BE NOT USEFULL
     # subprocess.check_call("platformio run --silent --environment dev_4096", shell=True)
-    base=analyse_memory(".pioenvs/dev_4096/firmware.elf")
+    base=analyse_memory(".pioenvs/"+env+"/firmware.elf")
 
 
     # note: unused libs never use any memory, so dont have to test this
@@ -178,12 +188,6 @@ try:
     #     ))
 
 
-    #which plugins to test?
-    if len(sys.argv)>2:
-        test_plugins=sys.argv[2:]
-    else:
-        test_plugins=plugins
-    test_plugins.sort()
 
 
 
@@ -191,8 +195,8 @@ try:
     results={}
     for plugin in test_plugins:
         enable_plugin(plugin)
-        subprocess.check_call("platformio run --silent --environment dev_4096", shell=True)
-        results[plugin]=analyse_memory(".pioenvs/dev_4096/firmware.elf")
+        subprocess.check_call("platformio run --silent --environment "+env, shell=True)
+        results[plugin]=analyse_memory(".pioenvs/"+env+"/firmware.elf")
         disable_plugin(plugin)
 
         print(output_format.format(
@@ -210,8 +214,8 @@ try:
     for plugin in test_plugins:
         enable_plugin(plugin)
 
-    subprocess.check_call("platformio run --silent --environment dev_4096", shell=True)
-    total=analyse_memory(".pioenvs/dev_4096/firmware.elf")
+    subprocess.check_call("platformio run --silent --environment "+env, shell=True)
+    total=analyse_memory(".pioenvs/"+env+"/firmware.elf")
 
     print(output_format.format(
         "ALL",
