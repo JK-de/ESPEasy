@@ -11,13 +11,12 @@
 
 //#include <*.h>   - no external lib required
 
-static long Plugin_146_millisChimeEnd = 0;
-static long Plugin_146_millisPauseEnd = 0;
+static long Plugin_146_millisStateEnd = 0;
 
-static long Plugin_146_millisChimeTime = 200;
-static long Plugin_146_millisPauseTime = 1000;
+static long Plugin_146_millisChimeTime = 150;
+static long Plugin_146_millisPauseTime = 750;
 
-#define PLUGIN_146_FIFO_SIZE 32   // must be power of 2
+#define PLUGIN_146_FIFO_SIZE 64   // must be power of 2
 #define PLUGIN_146_FIFO_MASK (PLUGIN_146_FIFO_SIZE-1)
 
 static char Plugin_146_FIFO[PLUGIN_146_FIFO_SIZE];
@@ -69,16 +68,16 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
       {
         char tmpString[128];
 
-        string += F("<TR><TD>GPIO:<TD>");
+        //default values
+        if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] <= 0)   //Plugin_146_millisChimeTime
+          Settings.TaskDevicePluginConfig[event->TaskIndex][0] = 100;
+        if (Settings.TaskDevicePluginConfig[event->TaskIndex][1] <= 0)   //Plugin_146_millisPauseTime
+          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = 500;
 
-        string += F("<TR><TD>Chiming Time [ms]:<TD>");
-        addPinSelect(false, string, "chimetime", Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
-        string += F("<TR><TD>Pause Time [ms]:<TD>");
-        addPinSelect(false, string, "pausetime", Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
-        string += F("<TR><TD>xxx:<TD>");
-        addPinSelect(false, string, "xxx", Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
-        string += F("<TR><TD>yyy:<TD>");
-        addPinSelect(false, string, "yyy", Settings.TaskDevicePluginConfig[event->TaskIndex][3]);
+        sprintf_P(tmpString, PSTR("<TR><TD>Chiming Time [ms]:<TD><input type='text' name='chimetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
+        string += tmpString;
+        sprintf_P(tmpString, PSTR("<TR><TD>Pause Time [ms]:<TD><input type='text' name='pausetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
+        string += tmpString;
 
         success = true;
         break;
@@ -86,17 +85,10 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WEBFORM_SAVE:
       {
-        String plugin2 = WebServer.arg("chimetime");
-        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = Plugin_146_millisChimeTime = plugin2.toInt();
-        String plugin3 = WebServer.arg("pausetime");
-        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = Plugin_146_millisPauseTime = plugin3.toInt();
-        String plugin4 = WebServer.arg("xxx");
-        Settings.TaskDevicePluginConfig[event->TaskIndex][2] = plugin4.toInt();
-        String plugin5 = WebServer.arg("yyy");
-        Settings.TaskDevicePluginConfig[event->TaskIndex][3] = plugin5.toInt();
-
-        for (byte i=0; i<3; i++)
-          Plugin_146_pin[i] = Settings.TaskDevicePin[event->TaskIndex][i];
+        String plugin0 = WebServer.arg("chimetime");
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = Plugin_146_millisChimeTime = plugin0.toInt();
+        String plugin1 = WebServer.arg("pausetime");
+        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = Plugin_146_millisPauseTime = plugin1.toInt();
 
         success = true;
         break;
@@ -104,19 +96,22 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_INIT:
       {
-        String log = F("Chime: Pin ");
+        Plugin_146_lowActive = Settings.TaskDevicePin1Inversed[event->TaskIndex];
+
+        String log = F("Chime: GPIO ");
         for (byte i=0; i<3; i++)
         {
           int pin = Settings.TaskDevicePin[event->TaskIndex][i];
           Plugin_146_pin[i] = pin;
           if (pin >= 0)
+          {
             pinMode(pin, OUTPUT);
+            digitalWrite(pin, Plugin_146_lowActive);
+          }
           log += pin;
           log += F(" ");
         }
-        Plugin_146_lowActive = Settings.TaskDevicePin1Inversed[event->TaskIndex];
         addLog(LOG_LEVEL_INFO, log);
-
 
         success = true;
         break;
@@ -130,49 +125,91 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
         if (command == F("chime"))
         {
-          String param = parseString(string, 2);
-          byte i = 0;
-          while (param[i] != 0)
-          {
-            Plugin_146_WriteFIFO(param[i++]);
-          }
+          int paramPos = getParamStartPos(string, 2);
+          String param = string.substring(paramPos);
+          Plugin_146_AddStringFIFO(param);
+          success = true;
+        }
+        if (command == F("chimeplay"))
+        {
+          String name = parseString(string, 2);
+          String param;
+          Plugin_146_ReadChime(name, param);
+          Plugin_146_AddStringFIFO(param);
+          success = true;
+        }
+        if (command == F("chimesave"))
+        {
+          String name = parseString(string, 2);
+          int paramPos = getParamStartPos(string, 3);
+          String param = string.substring(paramPos);
+          Plugin_146_WriteChime(name, param);
+          Plugin_146_AddStringFIFO(param);
           success = true;
         }
 
         break;
       }
 
+      case PLUGIN_CLOCK_IN:
+        {
+          // static String clockChimes = "1112,1121,1122,1211,1212,1221,1222,2111,2112,2121,2122,2211";   //1..12
+          // static String clockChimes = "1-1-1-11,1-1-11-1,1-1-111,1-11-1-1,1-11-11,1-111-1,1-1111,11-1-1-1,11-1-11,11-11-1,11-111,111-1-1";   //1..12
+          static String clockChimes = "1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11";   //1..12
+          byte hours = hour();
+          byte minutes = minute();
+
+          //TODO
+          if (1)
+          {
+            Plugin_146_ReadChime("hours", clockChimes);
+
+            // hours 0..23 -> 1..12
+            hours = hours % 12;
+            if (hours == 0)
+              hours = 12;
+              //byte index = hours;
+              byte index = (minutes % 10);
+
+            String param = parseString(clockChimes, index);
+            Plugin_146_AddStringFIFO(param);
+          }
+
+          success = true;
+          break;
+        }
+
+
     case PLUGIN_FIFTY_PER_SECOND:
     //case PLUGIN_TEN_PER_SECOND:
       {
         long millisAct = millis();
 
-        if (Plugin_146_millisChimeEnd > 0)   // just striking?
+        if (Plugin_146_millisStateEnd > 0)   // just striking?
         {
-          if (Plugin_146_millisChimeEnd < millisAct)   // end reached?
+          if (Plugin_146_millisStateEnd <= millisAct)   // end reached?
           {
             for (byte i=0; i<3; i++)
             {
               if (Plugin_146_pin[i] >= 0)
-                digitalWrite(Plugin_146_pin[i], 0);
+                digitalWrite(Plugin_146_pin[i], Plugin_146_lowActive);
             }
-            Plugin_146_millisChimeEnd = 0;
+            Plugin_146_millisStateEnd = 0;
           }
         }
-        else if (Plugin_146_millisPauseEnd > 0)   // just waiting?
-        {
-          if (Plugin_146_millisPauseEnd < millisAct)   // end reached?
-          {
-            Plugin_146_millisPauseEnd = 0;
-          }
-        }
-        else
+
+        if (Plugin_146_millisStateEnd == 0)   // just finished?
         {
           if (! Plugin_146_IsEmptyFIFO())
           {
             char c = Plugin_146_ReadFIFO();
-            Plugin_146_millisChimeEnd = millisAct + 100;
-            Plugin_146_millisPauseEnd = millisAct + 1000;
+
+            String log = F("Chime: Process '");
+            log += c;
+            log += "'";
+            addLog(LOG_LEVEL_DEBUG, log);
+
+            Plugin_146_millisStateEnd = millisAct + Plugin_146_millisChimeTime;
 
             if (c >= '1' && c <= '7')
             {
@@ -181,9 +218,25 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
               {
                 if (Plugin_146_pin[i] >= 0)
                   if (c & mask)
-                    digitalWrite(Plugin_146_pin[i], 1);
+                    digitalWrite(Plugin_146_pin[i], !Plugin_146_lowActive);
                 mask <<= 1;
               }
+            }
+            else if (c == '=')   //long pause
+            {
+              Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime*3;
+            }
+            else if (c == '-' || c == ' ')   //single pause
+            {
+              Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime;
+            }
+            else if (c == '.')   //short pause
+            {
+              Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime/3;
+            }
+            else //if (c == '|')   //shortest pause
+            {
+              //do nothing
             }
           }
 
@@ -218,7 +271,93 @@ char Plugin_146_ReadFIFO()
   return c;
 }
 
+char Plugin_146_PeekFIFO()
+{
+  if (Plugin_146_IsEmptyFIFO())
+    return '\0';
+
+  return Plugin_146_FIFO[Plugin_146_FIFO_IndexR];
+}
+
 boolean Plugin_146_IsEmptyFIFO()
 {
   return (Plugin_146_FIFO_IndexR == Plugin_146_FIFO_IndexW);
+}
+
+void Plugin_146_AddStringFIFO(const String& param)
+{
+  byte i = 0;
+  char c = param[i];
+  char c_last = '\0';
+  while (c != 0)
+  {
+    if (Plugin_146_IsNumeric(c) && Plugin_146_IsNumeric(c_last))   // "11" is shortcut for "1-1" -> add pause
+      Plugin_146_WriteFIFO('-');
+    if (c == '!')   //double strike -> add shortest pause and repeat last strike
+    {
+      Plugin_146_WriteFIFO('|');
+      c = c_last;
+    }
+    Plugin_146_WriteFIFO(c);
+    c_last = c;
+
+    c = param[++i];
+  }
+}
+
+boolean Plugin_146_IsNumeric(char c)
+{
+  if (c >= '0' && c <= '9')
+    return true;
+  return false;
+}
+
+void Plugin_146_WriteChime(const String& name, const String& param)
+{
+  String fileName = F("chime_");
+  fileName += name;
+  fileName += F(".txt");
+
+  String log = F("Chime: write ");
+  log += fileName;
+  log += F(" ");
+
+  fs::File f = SPIFFS.open(fileName, "w");
+  if (f)
+  {
+    f.print(param);
+    f.close();
+    //flashCount();
+    log += param;
+  }
+
+  addLog(LOG_LEVEL_INFO, log);
+}
+
+void Plugin_146_ReadChime(const String& name, String& param)
+{
+  String fileName = F("chime_");
+  fileName += name;
+  fileName += F(".txt");
+
+  String log = F("Chime: read ");
+  log += fileName;
+  log += F(" ");
+
+  param = "";
+  fs::File f = SPIFFS.open(fileName, "r+");
+  if (f)
+  {
+    char c;
+    while (f.available())
+    {
+      c = f.read();
+      param += c;
+    }
+    f.close();
+
+    log += param;
+  }
+
+  addLog(LOG_LEVEL_INFO, log);
 }
