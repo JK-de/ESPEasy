@@ -24,7 +24,8 @@ static byte Plugin_146_FIFO_IndexR = 0;
 static byte Plugin_146_FIFO_IndexW = 0;
 
 static int Plugin_146_pin[3] = {-1,-1,-1};
-static int Plugin_146_lowActive = false;
+static byte Plugin_146_lowActive = false;
+static byte Plugin_146_chimeClock = true;
 
 #define PLUGIN_146
 #define PLUGIN_ID_146         146
@@ -76,8 +77,14 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
         sprintf_P(tmpString, PSTR("<TR><TD>Chiming Time [ms]:<TD><input type='text' name='chimetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
         string += tmpString;
+
         sprintf_P(tmpString, PSTR("<TR><TD>Pause Time [ms]:<TD><input type='text' name='pausetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
         string += tmpString;
+
+        string += F("<TR><TD>Hourly Chiming Clock Strike:<TD><input type=checkbox id='chimeclock' name='chimeclock'");
+        if (Settings.TaskDevicePluginConfig[event->TaskIndex][2])
+          string += F(" checked");
+        string += F(">&nbsp;");
 
         success = true;
         break;
@@ -85,10 +92,13 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WEBFORM_SAVE:
       {
-        String plugin0 = WebServer.arg("chimetime");
+        String plugin0 = WebServer.arg(F("chimetime"));
         Settings.TaskDevicePluginConfig[event->TaskIndex][0] = Plugin_146_millisChimeTime = plugin0.toInt();
-        String plugin1 = WebServer.arg("pausetime");
+
+        String plugin1 = WebServer.arg(F("pausetime"));
         Settings.TaskDevicePluginConfig[event->TaskIndex][1] = Plugin_146_millisPauseTime = plugin1.toInt();
+
+        Settings.TaskDevicePluginConfig[event->TaskIndex][2] = (WebServer.arg(F("chimeclock")) == "on");
 
         success = true;
         break;
@@ -97,6 +107,7 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
     case PLUGIN_INIT:
       {
         Plugin_146_lowActive = Settings.TaskDevicePin1Inversed[event->TaskIndex];
+        Plugin_146_chimeClock = Settings.TaskDevicePluginConfig[event->TaskIndex][2];
 
         String log = F("Chime: GPIO ");
         for (byte i=0; i<3; i++)
@@ -144,7 +155,7 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
           int paramPos = getParamStartPos(string, 3);
           String param = string.substring(paramPos);
           Plugin_146_WriteChime(name, param);
-          Plugin_146_AddStringFIFO(param);
+          //Plugin_146_AddStringFIFO(param);
           success = true;
         }
 
@@ -160,7 +171,7 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
           byte minutes = minute();
 
           //TODO
-          if (1)
+          if (Plugin_146_chimeClock)
           {
             Plugin_146_ReadChime("hours", clockChimes);
 
@@ -168,8 +179,9 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
             hours = hours % 12;
             if (hours == 0)
               hours = 12;
-              //byte index = hours;
-              byte index = (minutes % 10);
+
+            //byte index = hours;
+            byte index = (minutes % 10);
 
             String param = parseString(clockChimes, index);
             Plugin_146_AddStringFIFO(param);
@@ -211,32 +223,41 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
             Plugin_146_millisStateEnd = millisAct + Plugin_146_millisChimeTime;
 
-            if (c >= '1' && c <= '7')
+            switch (c)
             {
-              byte mask = 1;
-              for (byte i=0; i<3; i++)
+              case '0':
+              case '1':
+              case '2':
+              case '3':
+              case '4':
+              case '5':
+              case '6':
+              case '7':
               {
-                if (Plugin_146_pin[i] >= 0)
-                  if (c & mask)
-                    digitalWrite(Plugin_146_pin[i], !Plugin_146_lowActive);
-                mask <<= 1;
+                byte mask = 1;
+                for (byte i=0; i<3; i++)
+                {
+                  if (Plugin_146_pin[i] >= 0)
+                    if (c & mask)
+                      digitalWrite(Plugin_146_pin[i], !Plugin_146_lowActive);
+                  mask <<= 1;
+                }
+                break;
               }
-            }
-            else if (c == '=')   //long pause
-            {
-              Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime*3;
-            }
-            else if (c == '-' || c == ' ')   //single pause
-            {
-              Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime;
-            }
-            else if (c == '.')   //short pause
-            {
-              Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime/3;
-            }
-            else //if (c == '|')   //shortest pause
-            {
-              //do nothing
+              case '=':   //long pause
+                Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime*3;
+                break;
+              case '-':
+              case ' ':   //single pause
+                Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime;
+                break;
+              case '.':   //short pause
+                Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime/3;
+                break;
+              case '|':   //shortest pause
+              default:
+                //do nothing
+                break;
             }
           }
 
@@ -248,6 +269,8 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
   }
   return success;
 }
+
+// FIFO functions
 
 void Plugin_146_WriteFIFO(char c)
 {
@@ -286,9 +309,13 @@ boolean Plugin_146_IsEmptyFIFO()
 
 void Plugin_146_AddStringFIFO(const String& param)
 {
+  if (param.length() == 0)
+    return;
+
   byte i = 0;
   char c = param[i];
   char c_last = '\0';
+
   while (c != 0)
   {
     if (Plugin_146_IsNumeric(c) && Plugin_146_IsNumeric(c_last))   // "11" is shortcut for "1-1" -> add pause
@@ -303,6 +330,8 @@ void Plugin_146_AddStringFIFO(const String& param)
 
     c = param[++i];
   }
+
+  Plugin_146_WriteFIFO('=');
 }
 
 boolean Plugin_146_IsNumeric(char c)
@@ -311,6 +340,8 @@ boolean Plugin_146_IsNumeric(char c)
     return true;
   return false;
 }
+
+//File I/O functions
 
 void Plugin_146_WriteChime(const String& name, const String& param)
 {
