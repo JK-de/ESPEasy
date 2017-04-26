@@ -18,16 +18,24 @@
 // (g) '#'                        Comment - rest of the tokens will be ignored
 // Note: If no pause is specified, a normal pause will be inserted "111" -> "1-1-1"
 
-// Usage of Chime Clock:
+// Usage as Hourly Chime Clock:
 // save twelve comma separated tokens with name "hours", enable checkbox "Hourly Chiming Clock Strike" in web interface and enable NTP (advanced settings)
 //
 // examples:
 // Binary coded with 2 bells (2nd bell=1):    "1112,1121,1122,1211,1212,1221,1222,2111,2112,2121,2122,2211"
 // Binary coded with 1 bell (short pause=1):  "1_1_1_11,1_1_11_1,1_1_111,1_11_1_1,1_11_11,1_111_1,1_1111,11_1_1_1,11_1_11,11_11_1,11_111,111_1_1"
-// Binary coded with 1 bell (double stroke=1):"1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11"
+// Binary coded with 1 bell (double strike=1):"1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11"
 // Historical coded with 1 bell:              "1,11,111,1111,11111,111111,1111111,11111111,111111111,1111111111,11111111111,111111111111"
 //
 // CHIMESAVE,hours,1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11
+
+// Usage as Alarm Clock:
+// save tokens with name "<HH><MM>" and enable NTP (advanced settings)
+//
+// examples:
+// CHIMESAVE,0815,1111!           Dayly Alarm at 8:15am
+// CHIMESAVE,2015,11121           Dayly Alarm at 8:15pm
+// CHIMESAVE,2015                 Delete Alarm at 8:15pm
 
 
 //#include <*.h>   - no external lib required
@@ -84,25 +92,15 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WEBFORM_LOAD:
       {
-        char tmpString[128];
-
         //default values
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] <= 0)   //Plugin_146_millisChimeTime
           Settings.TaskDevicePluginConfig[event->TaskIndex][0] = 100;
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][1] <= 0)   //Plugin_146_millisPauseTime
           Settings.TaskDevicePluginConfig[event->TaskIndex][1] = 500;
 
-          /*
-        sprintf_P(tmpString, PSTR("<TR><TD>Chiming Time [ms]:<TD><input type='text' name='chimetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
-        string += tmpString;
-        */
         string += F("<TR><TD>Chiming Time [ms]:<TD>");
         addNumericBox(string, F("chimetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
 
-        /*
-        sprintf_P(tmpString, PSTR("<TR><TD>Pause Time [ms]:<TD><input type='text' name='pausetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
-        string += tmpString;
-        */
         string += F("<TR><TD>Pause Time [ms]:<TD>");
         addNumericBox(string, F("pausetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
 
