@@ -40,13 +40,12 @@
 
 //#include <*.h>   - no external lib required
 
-static long Plugin_146_millisStateEnd = 0;
-
-static long Plugin_146_millisChimeTime = 80;
-static long Plugin_146_millisPauseTime = 750;
-
 #define PLUGIN_146_FIFO_SIZE 64   // must be power of 2
 #define PLUGIN_146_FIFO_MASK (PLUGIN_146_FIFO_SIZE-1)
+
+static long Plugin_146_millisStateEnd = 0;
+static long Plugin_146_millisChimeTime = 60;
+static long Plugin_146_millisPauseTime = 750;
 
 static char Plugin_146_FIFO[PLUGIN_146_FIFO_SIZE];
 static byte Plugin_146_FIFO_IndexR = 0;
@@ -98,11 +97,13 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][1] <= 0)   //Plugin_146_millisPauseTime
           Settings.TaskDevicePluginConfig[event->TaskIndex][1] = 500;
 
-        string += F("<TR><TD>Chiming Time [ms]:<TD>");
+        string += F("<TR><TD>Chiming Time:<TD>");
         addNumericBox(string, F("chimetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
+        string += F(" [ms]");
 
-        string += F("<TR><TD>Pause Time [ms]:<TD>");
+        string += F("<TR><TD>Pause Time:<TD>");
         addNumericBox(string, F("pausetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
+        string += F(" [ms]");
 
         string += F("<TR><TD>Hourly Chiming Clock Strike:<TD>");
         addCheckBox(string, F("chimeclock"), Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
@@ -114,10 +115,10 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
     case PLUGIN_WEBFORM_SAVE:
       {
         String plugin0 = WebServer.arg(F("chimetime"));
-        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = Plugin_146_millisChimeTime = plugin0.toInt();
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = plugin0.toInt();
 
         String plugin1 = WebServer.arg(F("pausetime"));
-        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = Plugin_146_millisPauseTime = plugin1.toInt();
+        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = plugin1.toInt();
 
         Settings.TaskDevicePluginConfig[event->TaskIndex][2] = (WebServer.arg(F("chimeclock")) == "on");
 
@@ -128,6 +129,8 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
     case PLUGIN_INIT:
       {
         Plugin_146_lowActive = Settings.TaskDevicePin1Inversed[event->TaskIndex];
+        Plugin_146_millisChimeTime = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
+        Plugin_146_millisPauseTime = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
         Plugin_146_chimeClock = Settings.TaskDevicePluginConfig[event->TaskIndex][2];
 
         String log = F("Chime: GPIO ");
@@ -151,8 +154,6 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WRITE:
       {
-        bool bNewValue = false;
-
         String command = parseString(string, 1);
 
         if (command == F("chime"))
@@ -176,7 +177,7 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
           int paramPos = getParamStartPos(string, 3);
           String param = string.substring(paramPos);
           Plugin_146_WriteChime(name, param);
-          //Plugin_146_AddStringFIFO(param);
+          Plugin_146_AddStringFIFO(F("1"));
           success = true;
         }
 
@@ -189,7 +190,6 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
           byte hours = hour();
           byte minutes = minute();
 
-          //TODO
           if (Plugin_146_chimeClock)
           {
             char tmpString[8];
@@ -198,23 +198,22 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
             if (Plugin_146_ReadChime(tmpString, tokens))
               Plugin_146_AddStringFIFO(tokens);
 
-            //if (minutes == 0)
+            if (minutes == 0)
             {
               if (Plugin_146_ReadChime("hours", tokens) == 0)
-                tokens = "1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11";   //1..12
+                tokens = F("1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11");   //1..12
 
               // hours 0..23 -> 1..12
               hours = hours % 12;
               if (hours == 0)
                 hours = 12;
 
-              //byte index = hours;
-              byte index = (minutes % 10);   //test only
+              byte index = hours;
+              //byte index = (minutes % 10);   //test only
 
               tokens = parseString(tokens, index);
               Plugin_146_AddStringFIFO(tokens);
             }
-
           }
 
           success = true;
@@ -307,7 +306,7 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
 void Plugin_146_WriteFIFO(char c)
 {
-  if (Plugin_146_FIFO_IndexR == ((Plugin_146_FIFO_IndexW+1) & PLUGIN_146_FIFO_MASK))
+  if (Plugin_146_FIFO_IndexR == ((Plugin_146_FIFO_IndexW+1) & PLUGIN_146_FIFO_MASK))   // FIFO full?
     return;
 
   Plugin_146_FIFO[Plugin_146_FIFO_IndexW] = c;
@@ -351,7 +350,7 @@ void Plugin_146_AddStringFIFO(const String& param)
 
   while (c != 0)
   {
-    if (Plugin_146_IsNumeric(c) && Plugin_146_IsNumeric(c_last))   // "11" is shortcut for "1-1" -> add pause
+    if (isDigit(c) && isDigit(c_last))   // "11" is shortcut for "1-1" -> add pause
       Plugin_146_WriteFIFO('-');
     if (c == '!')   //double strike -> add shortest pause and repeat last strike
     {
@@ -365,13 +364,6 @@ void Plugin_146_AddStringFIFO(const String& param)
   }
 
   Plugin_146_WriteFIFO('=');
-}
-
-boolean Plugin_146_IsNumeric(char c)
-{
-  if (c >= '0' && c <= '9')
-    return true;
-  return false;
 }
 
 //File I/O functions
