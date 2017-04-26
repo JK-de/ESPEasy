@@ -4,16 +4,37 @@
 // written by Jochen Krapf (jk@nerd2nerd.org)
 
 // List of commands:
-// (1) RGB,<red 0-255>,<green 0-255>,<blue 0-255>
+// (1) CHIME,<tokens>             Play token direct
+// (2) CHIMESAVE,<name>,<tokens>  Save tokens with given name in FFS
+// (3) CHIMEPLAY,<name>           Play saved tokens given name out of FFS
 
-// Usage:
-// (1): Set RGB Color to LED (eg. RGB,255,255,255)
+// List of tokens:
+// (a) '1' ... '7'                Bell number - 1=1st bell, 2=2nd bell, 4=3rd bell, numbers can be added to strike simultaniouly
+// (b) '!'                        Double strike prev. token
+// (c) '-' or ' '                 Normal Pause
+// (d) '='                        Long Pause (3 times normal)
+// (e) '.'                        Short Pause (1/3 of normal)
+// (f) '|'                        Shortest Pause
+// (g) '#'                        Comment - rest of the tokens will be ignored
+// Note: If no pause is specified, a normal pause will be inserted "111" -> "1-1-1"
+
+// Usage of Chime Clock:
+// save twelve comma separated tokens with name "hours", enable checkbox "Hourly Chiming Clock Strike" in web interface and enable NTP (advanced settings)
+//
+// examples:
+// Binary coded with 2 bells (2nd bell=1):    "1112,1121,1122,1211,1212,1221,1222,2111,2112,2121,2122,2211"
+// Binary coded with 1 bell (short pause=1):  "1_1_1_11,1_1_11_1,1_1_111,1_11_1_1,1_11_11,1_111_1,1_1111,11_1_1_1,11_1_11,11_11_1,11_111,111_1_1"
+// Binary coded with 1 bell (double stroke=1):"1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11"
+// Historical coded with 1 bell:              "1,11,111,1111,11111,111111,1111111,11111111,111111111,1111111111,11111111111,111111111111"
+//
+// CHIMESAVE,hours,1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11
+
 
 //#include <*.h>   - no external lib required
 
 static long Plugin_146_millisStateEnd = 0;
 
-static long Plugin_146_millisChimeTime = 150;
+static long Plugin_146_millisChimeTime = 80;
 static long Plugin_146_millisPauseTime = 750;
 
 #define PLUGIN_146_FIFO_SIZE 64   // must be power of 2
@@ -30,10 +51,6 @@ static byte Plugin_146_chimeClock = true;
 #define PLUGIN_146
 #define PLUGIN_ID_146         146
 #define PLUGIN_NAME_146       "Chiming Mechanism"
-#define PLUGIN_VALUENAME1_146 "H"
-#define PLUGIN_VALUENAME2_146 "S"
-#define PLUGIN_VALUENAME3_146 "V"
-
 
 
 boolean Plugin_146(byte function, struct EventStruct *event, String& string)
@@ -75,16 +92,22 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][1] <= 0)   //Plugin_146_millisPauseTime
           Settings.TaskDevicePluginConfig[event->TaskIndex][1] = 500;
 
+          /*
         sprintf_P(tmpString, PSTR("<TR><TD>Chiming Time [ms]:<TD><input type='text' name='chimetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
         string += tmpString;
+        */
+        string += F("<TR><TD>Chiming Time [ms]:<TD>");
+        addNumericBox(string, F("chimetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
 
+        /*
         sprintf_P(tmpString, PSTR("<TR><TD>Pause Time [ms]:<TD><input type='text' name='pausetime' size='3' value='%u'>"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
         string += tmpString;
+        */
+        string += F("<TR><TD>Pause Time [ms]:<TD>");
+        addNumericBox(string, F("pausetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
 
-        string += F("<TR><TD>Hourly Chiming Clock Strike:<TD><input type=checkbox id='chimeclock' name='chimeclock'");
-        if (Settings.TaskDevicePluginConfig[event->TaskIndex][2])
-          string += F(" checked");
-        string += F(">&nbsp;");
+        string += F("<TR><TD>Hourly Chiming Clock Strike:<TD>");
+        addCheckBox(string, F("chimeclock"), Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
 
         success = true;
         break;
@@ -164,27 +187,36 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
 
       case PLUGIN_CLOCK_IN:
         {
-          // static String clockChimes = "1112,1121,1122,1211,1212,1221,1222,2111,2112,2121,2122,2211";   //1..12
-          // static String clockChimes = "1-1-1-11,1-1-11-1,1-1-111,1-11-1-1,1-11-11,1-111-1,1-1111,11-1-1-1,11-1-11,11-11-1,11-111,111-1-1";   //1..12
-          static String clockChimes = "1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11";   //1..12
+          String tokens = "";
           byte hours = hour();
           byte minutes = minute();
 
           //TODO
           if (Plugin_146_chimeClock)
           {
-            Plugin_146_ReadChime("hours", clockChimes);
+            char tmpString[8];
 
-            // hours 0..23 -> 1..12
-            hours = hours % 12;
-            if (hours == 0)
-              hours = 12;
+            sprintf_P(tmpString, PSTR("%2d%2d"), hours, minutes);
+            if (Plugin_146_ReadChime(tmpString, tokens))
+              Plugin_146_AddStringFIFO(tokens);
 
-            //byte index = hours;
-            byte index = (minutes % 10);
+            //if (minutes == 0)
+            {
+              if (Plugin_146_ReadChime("hours", tokens) == 0)
+                tokens = "1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11";   //1..12
 
-            String param = parseString(clockChimes, index);
-            Plugin_146_AddStringFIFO(param);
+              // hours 0..23 -> 1..12
+              hours = hours % 12;
+              if (hours == 0)
+                hours = 12;
+
+              //byte index = hours;
+              byte index = (minutes % 10);   //test only
+
+              tokens = parseString(tokens, index);
+              Plugin_146_AddStringFIFO(tokens);
+            }
+
           }
 
           success = true;
@@ -221,11 +253,9 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
             log += "'";
             addLog(LOG_LEVEL_DEBUG, log);
 
-            Plugin_146_millisStateEnd = millisAct + Plugin_146_millisChimeTime;
-
             switch (c)
             {
-              case '0':
+              case '0':   //strikes 1=1st bell, 2=2nd bell, 4=3rd bell
               case '1':
               case '2':
               case '3':
@@ -242,21 +272,26 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
                       digitalWrite(Plugin_146_pin[i], !Plugin_146_lowActive);
                   mask <<= 1;
                 }
+                Plugin_146_millisStateEnd = millisAct + Plugin_146_millisChimeTime;
                 break;
               }
               case '=':   //long pause
                 Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime*3;
                 break;
-              case '-':
-              case ' ':   //single pause
+              case '-':   //single pause
+              case ' ':
                 Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime;
                 break;
               case '.':   //short pause
                 Plugin_146_millisStateEnd = millisAct + Plugin_146_millisPauseTime/3;
                 break;
               case '|':   //shortest pause
-              default:
-                //do nothing
+                Plugin_146_millisStateEnd = millisAct + Plugin_146_millisChimeTime/2;
+                break;
+              case '#':   //comment -> eat till FIFO is empty
+                while (Plugin_146_ReadFIFO());
+                break;
+              default:   //unknown char -> do nothing
                 break;
             }
           }
@@ -343,7 +378,7 @@ boolean Plugin_146_IsNumeric(char c)
 
 //File I/O functions
 
-void Plugin_146_WriteChime(const String& name, const String& param)
+void Plugin_146_WriteChime(const String& name, const String& tokens)
 {
   String fileName = F("chime_");
   fileName += name;
@@ -356,16 +391,16 @@ void Plugin_146_WriteChime(const String& name, const String& param)
   fs::File f = SPIFFS.open(fileName, "w");
   if (f)
   {
-    f.print(param);
+    f.print(tokens);
     f.close();
     //flashCount();
-    log += param;
+    log += tokens;
   }
 
   addLog(LOG_LEVEL_INFO, log);
 }
 
-void Plugin_146_ReadChime(const String& name, String& param)
+byte Plugin_146_ReadChime(const String& name, String& tokens)
 {
   String fileName = F("chime_");
   fileName += name;
@@ -375,7 +410,7 @@ void Plugin_146_ReadChime(const String& name, String& param)
   log += fileName;
   log += F(" ");
 
-  param = "";
+  tokens = "";
   fs::File f = SPIFFS.open(fileName, "r+");
   if (f)
   {
@@ -383,12 +418,14 @@ void Plugin_146_ReadChime(const String& name, String& param)
     while (f.available())
     {
       c = f.read();
-      param += c;
+      tokens += c;
     }
     f.close();
 
-    log += param;
+    log += tokens;
   }
 
   addLog(LOG_LEVEL_INFO, log);
+
+  return tokens.length();
 }
