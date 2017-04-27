@@ -40,24 +40,24 @@
 
 //#include <*.h>   - no external lib required
 
-#define PLUGIN_146_FIFO_SIZE 64   // must be power of 2
-#define PLUGIN_146_FIFO_MASK (PLUGIN_146_FIFO_SIZE-1)
+#define PLUGIN_146
+#define PLUGIN_ID_146         146
+#define PLUGIN_NAME_146       "Chiming Mechanism"
 
 static long Plugin_146_millisStateEnd = 0;
 static long Plugin_146_millisChimeTime = 60;
 static long Plugin_146_millisPauseTime = 750;
 
-static char Plugin_146_FIFO[PLUGIN_146_FIFO_SIZE];
-static byte Plugin_146_FIFO_IndexR = 0;
-static byte Plugin_146_FIFO_IndexW = 0;
-
 static int Plugin_146_pin[3] = {-1,-1,-1};
 static byte Plugin_146_lowActive = false;
 static byte Plugin_146_chimeClock = true;
 
-#define PLUGIN_146
-#define PLUGIN_ID_146         146
-#define PLUGIN_NAME_146       "Chiming Mechanism"
+#define PLUGIN_146_FIFO_SIZE 64   // must be power of 2
+#define PLUGIN_146_FIFO_MASK (PLUGIN_146_FIFO_SIZE-1)
+
+static char Plugin_146_FIFO[PLUGIN_146_FIFO_SIZE];
+static byte Plugin_146_FIFO_IndexR = 0;
+static byte Plugin_146_FIFO_IndexW = 0;
 
 
 boolean Plugin_146(byte function, struct EventStruct *event, String& string)
@@ -133,7 +133,7 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
         Plugin_146_millisPauseTime = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
         Plugin_146_chimeClock = Settings.TaskDevicePluginConfig[event->TaskIndex][2];
 
-        String log = F("Chime: GPIO ");
+        String log = F("Chime: GPIO: ");
         for (byte i=0; i<3; i++)
         {
           int pin = Settings.TaskDevicePin[event->TaskIndex][i];
