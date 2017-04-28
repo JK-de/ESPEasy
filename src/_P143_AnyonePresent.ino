@@ -32,6 +32,7 @@ static long Plugin_143_millisPresenceTime = 10;
 static int Plugin_143_pin[3] = {-1,-1,-1};
 static byte Plugin_143_lowActive = false;
 static byte Plugin_143_useAin = false;
+static byte Plugin_143_counter[3] = {0,0,0};
 
 
 boolean Plugin_143(byte function, struct EventStruct *event, String& string)
@@ -73,7 +74,7 @@ boolean Plugin_143(byte function, struct EventStruct *event, String& string)
       {
         //default values
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] <= 0)   //Plugin_143_millisPresenceTime
-          Settings.TaskDevicePluginConfig[event->TaskIndex][0] = 30;
+          Settings.TaskDevicePluginConfig[event->TaskIndex][0] = 60;
 
         string += F("<TR><TD>Use Analog Input:<TD>");
         addCheckBox(string, F("useain"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
@@ -157,6 +158,14 @@ boolean Plugin_143(byte function, struct EventStruct *event, String& string)
                 value = !value;
 
               if (value)
+              {
+                if (Plugin_143_counter[i]<=5)
+                  Plugin_143_counter[i]++;
+              }
+              else
+                Plugin_143_counter[i] = 0;
+
+              if (Plugin_143_counter[i]>5)
                 presence = true;
           }
 

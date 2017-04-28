@@ -1,5 +1,5 @@
 //#######################################################################################################
-//#################################### Plugin 146: RGB-Strip ############################################
+//#################################### Plugin 146: Chiming Mechanism ####################################
 //#######################################################################################################
 // written by Jochen Krapf (jk@nerd2nerd.org)
 
@@ -9,7 +9,7 @@
 // (3) CHIMEPLAY,<name>           Play saved tokens given name out of FFS
 
 // List of tokens:
-// (a) '1' ... '7'                Bell number - 1=1st bell, 2=2nd bell, 4=3rd bell, numbers can be added to strike simultaniouly
+// (a) '1' ... '7'                Bell number - 1=1st bell, 2=2nd bell, 4=3rd bell, numbers can be added to strike simultaniouly, 7=all bells
 // (b) '!'                        Double strike prev. token
 // (c) '-' or ' '                 Normal Pause
 // (d) '='                        Long Pause (3 times normal)
@@ -19,7 +19,7 @@
 // Note: If no pause is specified, a normal pause will be inserted "111" -> "1-1-1"
 
 // Usage as Hourly Chime Clock:
-// save twelve comma separated tokens with name "hours", enable checkbox "Hourly Chiming Clock Strike" in web interface and enable NTP (advanced settings)
+// save twelve comma separated tokens with name "hours", enable checkbox "Hourly Chiming Clock Strike" in plugin web interface and enable NTP (advanced settings)
 //
 // examples:
 // Binary coded with 2 bells (2nd bell=1):    "1112,1121,1122,1211,1212,1221,1222,2111,2112,2121,2122,2211"
@@ -46,7 +46,7 @@
 
 static long Plugin_146_millisStateEnd = 0;
 static long Plugin_146_millisChimeTime = 60;
-static long Plugin_146_millisPauseTime = 750;
+static long Plugin_146_millisPauseTime = 400;
 
 static int Plugin_146_pin[3] = {-1,-1,-1};
 static byte Plugin_146_lowActive = false;
@@ -93,15 +93,15 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
       {
         //default values
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] <= 0)   //Plugin_146_millisChimeTime
-          Settings.TaskDevicePluginConfig[event->TaskIndex][0] = 100;
+          Settings.TaskDevicePluginConfig[event->TaskIndex][0] = 60;
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][1] <= 0)   //Plugin_146_millisPauseTime
-          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = 500;
+          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = 400;
 
-        string += F("<TR><TD>Chiming Time:<TD>");
+        string += F("<TR><TD>Chiming/Strike Time:<TD>");
         addNumericBox(string, F("chimetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
         string += F(" [ms]");
 
-        string += F("<TR><TD>Pause Time:<TD>");
+        string += F("<TR><TD>Normal Pause Time:<TD>");
         addNumericBox(string, F("pausetime"), Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
         string += F(" [ms]");
 
@@ -142,6 +142,7 @@ boolean Plugin_146(byte function, struct EventStruct *event, String& string)
           {
             pinMode(pin, OUTPUT);
             digitalWrite(pin, Plugin_146_lowActive);
+            setPinState(PLUGIN_ID_146, pin, PIN_MODE_OUTPUT, 0);
           }
           log += pin;
           log += F(" ");
