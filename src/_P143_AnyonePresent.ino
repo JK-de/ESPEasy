@@ -106,7 +106,7 @@ boolean Plugin_143(byte function, struct EventStruct *event, String& string)
         String log = F("Any1 : GPIO: ");
         for (byte i=0; i<3; i++)
         {
-          int pin = Settings.TaskDevicePin[event->TaskIndex][i];
+          int pin = Settings.TaskDevicePin[i][event->TaskIndex];
           Plugin_143_pin[i] = pin;
           if (pin >= 0)
           {
