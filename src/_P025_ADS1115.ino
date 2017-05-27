@@ -9,12 +9,38 @@
 
 boolean Plugin_025_init = false;
 
-static uint16_t readRegister025(uint8_t i2cAddress, uint8_t reg) {
+static uint16_t readDataRegister025(uint8_t i2cAddress)
+{
   Wire.beginTransmission(i2cAddress);
   Wire.write((0x00));
   Wire.endTransmission();
   Wire.requestFrom(i2cAddress, (uint8_t)2);
   return ((Wire.read() << 8) | Wire.read());
+}
+
+void setConfigRegister025(uint8_t i2cAddress, uint16_t config)
+{
+  Wire.beginTransmission(i2cAddress);
+  Wire.write((uint8_t)(0x01));
+  Wire.write((uint8_t)(config >> 8));
+  Wire.write((uint8_t)(config & 0xFF));
+  Wire.endTransmission();
+}
+
+void addOversamplingValue(byte taskIndex, byte valueIndex, float value)
+{
+  Settings.TaskDevicePluginConfigFloat[taskIndex][valueIndex] += value;
+  Settings.TaskDevicePluginConfigLong[taskIndex][valueIndex] ++;
+}
+
+void getOversamplingValue(byte taskIndex, byte valueIndex, float& value)
+{
+  if (Settings.TaskDevicePluginConfigLong[taskIndex][valueIndex])
+  {
+    value = Settings.TaskDevicePluginConfigFloat[taskIndex][valueIndex] / Settings.TaskDevicePluginConfigLong[taskIndex][valueIndex];
+    Settings.TaskDevicePluginConfigFloat[taskIndex][valueIndex] = 0.0;
+    Settings.TaskDevicePluginConfigLong[taskIndex][valueIndex] = 0;
+  }
 }
 
 boolean Plugin_025(byte function, struct EventStruct *event, String& string)
@@ -63,9 +89,11 @@ boolean Plugin_025(byte function, struct EventStruct *event, String& string)
         }
 
         #define ADS1115_I2C_OPTION 4
-        byte addr = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
-        int optionValues[ADS1115_I2C_OPTION] = { 0x48, 0x49, 0x4A, 0x4B };
-        addFormSelectorI2C(string, F("plugin_025_i2c"), ADS1115_I2C_OPTION, optionValues, addr);
+        byte address = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
+        if (address < 0x48 || address > 0x4B)
+          address = 0x48;
+        int addressOptionValues[ADS1115_I2C_OPTION] = { 0x48, 0x49, 0x4A, 0x4B };
+        addFormSelectorI2C(string, F("plugin_025_i2c"), ADS1115_I2C_OPTION, addressOptionValues, address);
 
         #define ADS1115_PGA_OPTION 6
         byte pga = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
@@ -75,7 +103,7 @@ boolean Plugin_025(byte function, struct EventStruct *event, String& string)
           F("2x gain (FS=2.048V)"),
           F("4x gain (FS=1.024V)"),
           F("8x gain (FS=0.512V)"),
-          F("16x gain (FS=0.256V)")
+          F("16x gain (FS=0.256V)"),
         };
         addFormSelector(string, F("Gain"), F("plugin_025_gain"), ADS1115_PGA_OPTION, pgaOptions, NULL, pga);
 
@@ -141,15 +169,12 @@ boolean Plugin_025(byte function, struct EventStruct *event, String& string)
 
         config |= (0x8000);   // Start a single conversion
 
-        Wire.beginTransmission(address);
-        Wire.write((uint8_t)(0x01));
-        Wire.write((uint8_t)(config >> 8));
-        Wire.write((uint8_t)(config & 0xFF));
-        Wire.endTransmission();
+        setConfigRegister025(address, config);
 
         delay(8);
-        UserVar[event->BaseVarIndex] = (float) readRegister025((address), (0x00)) ;
-        String log = F("ADS1115  : Analog value: ");
+        UserVar[event->BaseVarIndex] = (float)readDataRegister025(address);
+
+        String log = F("ADS1115 : Analog value: ");
         log += UserVar[event->BaseVarIndex];
         log += F(" @");
         log += String(config, 16);
