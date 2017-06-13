@@ -127,6 +127,7 @@ void getWebPageTemplateDefault(const String& tmplName, String& tmpl)
   }
 }
 
+//#define SPLITCONTENT
 
 void processWebPageTemplate(String& pageTemplate, String& pageResult, String& pageContent)
 {
@@ -137,6 +138,20 @@ void processWebPageTemplate(String& pageTemplate, String& pageResult, String& pa
   log += pageTemplate.length();
   log += F(" Content-Size=");
   log += pageContent.length();
+
+#ifdef SPLITCONTENT
+  // split content to 10 parts for better memory handling for later
+  String pageContentPart[10];
+  int16_t partSize = pageContent.length() / 10 + 1;
+  for (int8_t i=9; i>=0; i--)
+  {
+      int16_t splitPos = pageContent.length() - partSize;
+      if (splitPos < 0) splitPos = 0;
+      pageContentPart[i] = pageContent.substring(splitPos);
+      //pageContent = pageContent.substring(0, splitPos);
+      pageContent.remove(splitPos);
+  }
+#endif
 
   while ((indexStart = pageTemplate.indexOf("{{")) >= 0)
   {
@@ -152,8 +167,16 @@ void processWebPageTemplate(String& pageTemplate, String& pageResult, String& pa
 
       if (varName == F("content"))
       {
-        pageResult += pageContent;
-        pageContent = F("");   //free mem - content can only added once
+        #ifdef SPLITCONTENT
+          for (int8_t i=0; i<10; i++)
+          {
+            pageResult += pageContentPart[i];
+            pageContentPart[i] = F("");   //free mem - content can only added once
+          }
+        #else
+          pageResult += pageContent;
+          pageContent = F("");   //free mem - content can only added once
+        #endif
       }
       else
       {
