@@ -19,6 +19,12 @@ NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod>* Plugin_222_S = NULL;
 #define CONFIG(n) (Settings.TaskDevicePluginConfig[event->TaskIndex][n])
 #endif
 
+#define LED_OFFSET_S 0
+#define LED_OFFSET_M 60
+#define LED_OFFSET_H 120
+#define LED_COUNT (60+60+24)
+#define LED_COUNT_H 24
+#define LED_LUM_ON 128
 
 boolean Plugin_222(byte function, struct EventStruct *event, String& string)
 {
@@ -51,20 +57,26 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_WEBFORM_LOAD:
       {
-        byte addr = CONFIG(0);
+        byte type = CONFIG(0);
 
-        //int optionValues[8] = { 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77 };
-        //addFormSelectorI2C(F("i2c_addr"), 8, optionValues, addr);
+        if (CONFIG(1) <= 0)
+        {
+          CONFIG(1) = LED_COUNT;
+          CONFIG(2) = LED_OFFSET_S;
+          CONFIG(3) = LED_OFFSET_M;
+          CONFIG(4) = LED_OFFSET_H;
+        }
 
+        addFormSubHeader(F("Clock Settings"));
 
-        addFormSubHeader(F("7-Seg. Clock"));
-
-        int16_t choice = CONFIG(1);
+        int16_t choice = CONFIG(0);
         String options[2] = { F("none"), F("Ring") };
         addFormSelector(F("Clock Type"), F("clocktype"), 2, options, NULL, choice);
 
-        addFormNumericBox(F("Number of LEDs"), F("clockleds"), CONFIG(2), 12, 1000);
-        addFormNumericBox(F("LED Offset"), F("clockoffset"), CONFIG(3), 0, 1000);
+        addFormNumericBox(F("Number of LEDs"), F("clockleds"), CONFIG(1), 12, 1000);
+        addFormNumericBox(F("LED Offset S"), F("clockoffsets"), CONFIG(2), 0, 1000);
+        addFormNumericBox(F("LED Offset M"), F("clockoffsetm"), CONFIG(3), 0, 1000);
+        addFormNumericBox(F("LED Offset H"), F("clockoffseth"), CONFIG(4), 0, 1000);
         
         addFormNumericBox(F("Seg. for Colon"), F("clocksegcol"), CONFIG(6), -1, 7);
         addHtml(F(" Value "));
@@ -78,10 +90,12 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       {
         //CONFIG(0) = getFormItemInt(F("i2c_addr"));
 
-        CONFIG(1) = getFormItemInt(F("clocktype"));
+        CONFIG(0) = getFormItemInt(F("clocktype"));
 
-        CONFIG(2) = getFormItemInt(F("clockleds"));
-        CONFIG(3) = getFormItemInt(F("clockoffset"));
+        CONFIG(1) = getFormItemInt(F("clockleds"));
+        CONFIG(2) = getFormItemInt(F("clockoffsets"));
+        CONFIG(3) = getFormItemInt(F("clockoffsetm"));
+        CONFIG(4) = getFormItemInt(F("clockoffseth"));
 
         CONFIG(6) = getFormItemInt(F("clocksegcol"));
         CONFIG(7) = getFormItemInt(F("clocksegcolval"));
@@ -92,10 +106,10 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_INIT:
       {
-        byte addr = CONFIG(0);
+        byte type = CONFIG(0);
 
         if (!Plugin_222_S)
-          Plugin_222_S = new NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod>(60+60+24);
+          Plugin_222_S = new NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod>(LED_COUNT);
 
         //Plugin_222_S->();
         Plugin_222_S->Begin();
@@ -124,36 +138,46 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
         byte s = second();
         byte m = minute();
         byte h = hour();
-        byte i;
+        byte i, x;
+
+        s = (s+59) % 60;
+        m = (m+59) % 60;
+        h = (h+23) % 24;
 
         Plugin_222_S->ClearTo(RgbColor(0, 0, 0));
 
         for (i=0; i<60; i+=5)
         {
-          Plugin_222_S->SetPixelColor(i, RgbColor(3, 3, 3));
-          Plugin_222_S->SetPixelColor(i+60, RgbColor(3, 3, 3));
+          x = (i+59) % 60;
+          Plugin_222_S->SetPixelColor(x+LED_OFFSET_S, RgbColor(0, 2, 2));
+          Plugin_222_S->SetPixelColor(x+LED_OFFSET_M, RgbColor(0, 2, 2));
         }
         for (i=0; i<60; i+=15)
         {
-          Plugin_222_S->SetPixelColor(i, RgbColor(9, 9, 9));
-          Plugin_222_S->SetPixelColor(i+60, RgbColor(9, 9, 9));
+          x = (i+59) % 60;
+          Plugin_222_S->SetPixelColor(x+LED_OFFSET_S, RgbColor(0, 15, 15));
+          Plugin_222_S->SetPixelColor(x+LED_OFFSET_M, RgbColor(0, 15, 15));
         }
-        for (i=0; i<24; i+=3)
+        for (i=0; i<LED_COUNT_H; i+=3)
         {
-          Plugin_222_S->SetPixelColor(i+60+60, RgbColor(3, 3, 3));
+          x = (i+23) % 24;
+          Plugin_222_S->SetPixelColor(x+LED_OFFSET_H, RgbColor(0, 2, 2));
         }
-        for (i=0; i<60; i+=12)
+        for (i=0; i<LED_COUNT_H; i+=12)
         {
-          Plugin_222_S->SetPixelColor(i+60+60, RgbColor(9, 9, 9));
+          x = (i+23) % 24;
+          Plugin_222_S->SetPixelColor(x+LED_OFFSET_H, RgbColor(0, 15, 15));
         }
-        Plugin_222_S->SetPixelColor(s, RgbColor(0, 0, 128));
-        Plugin_222_S->SetPixelColor(m+60, RgbColor(0, 128, 0));
-        Plugin_222_S->SetPixelColor(h+60+60, RgbColor(128, 0, 0));
+        Plugin_222_S->SetPixelColor(s+LED_OFFSET_S, RgbColor(LED_LUM_ON, 0, 0));
+        Plugin_222_S->SetPixelColor(m+LED_OFFSET_M, RgbColor(LED_LUM_ON, 0, 0));
+        Plugin_222_S->SetPixelColor(h+LED_OFFSET_H, RgbColor(LED_LUM_ON, 0, 0));
         Plugin_222_S->Show();
         
-        unsigned long t = now();  // get local time in int secs
 
-        uint16_t f = millis() - prevMillis;
+        unsigned long t = now();  // get local time in int secs
+        t %= 60*60*24;
+
+        //uint16_t f = millis() - prevMillis;
 
         float ft = t + (millis() - prevMillis) * 0.001;
 
@@ -166,9 +190,12 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
         fh12 -= int(fh12);
         fh24 -= int(fh24);
 
-        String log = F("neoC : ");
-        log += String(f);
-        log += F("f, ");
+        String log = F("neoC : s=");
+        log += String(fs);
+        log += F(" m=");
+        log += String(fm);
+        log += F(" h=");
+        log += String(fh12);
         addLog(LOG_LEVEL_INFO, log);
 
         //Plugin_222_M->ClearRowBuffer();
